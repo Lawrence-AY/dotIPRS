@@ -2,8 +2,8 @@ const crypto = require('crypto');
 const iprsConfig = require('../../../config/iprs.config');
 
 class IPRSAuditService {
-  getModel() {
-    return require('../../../models').IPRSVerification;
+  constructor() {
+    this.records = [];
   }
 
   hashIdentifier(identifier) {
@@ -18,10 +18,8 @@ class IPRSAuditService {
       return { id: requestId };
     }
 
-    const IPRSVerification = this.getModel();
-    if (!IPRSVerification || !IPRSVerification.create) return null;
-
-    return IPRSVerification.create({
+    const record = {
+      id: requestId,
       requestId,
       memberId: memberId || null,
       verificationType,
@@ -31,22 +29,23 @@ class IPRSAuditService {
       iprsResponseStatus: iprsResponseStatus || null,
       verificationMethod: verificationMethod || null,
       verifiedAt: status === 'VERIFIED' ? new Date() : null,
-      requestedBy: requestedBy || null
-    });
+      requestedBy: requestedBy || null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.records.unshift(record);
+    return record;
   }
 
   async findById(id) {
     if (!iprsConfig.auditEnabled) return null;
 
-    const IPRSVerification = this.getModel();
-    if (!IPRSVerification || !IPRSVerification.findByPk) return null;
-    return IPRSVerification.findByPk(id);
+    return this.records.find((record) => record.id === id) || null;
   }
 
   async list({ page = 1, limit = 20, status, verificationType, requestedBy }) {
     if (!iprsConfig.auditEnabled) return { count: 0, rows: [] };
 
-    const IPRSVerification = this.getModel();
     const safeLimit = Math.min(Number(limit) || 20, 100);
     const safePage = Math.max(Number(page) || 1, 1);
     const where = {};
@@ -55,12 +54,8 @@ class IPRSAuditService {
     if (verificationType) where.verificationType = verificationType;
     if (requestedBy) where.requestedBy = requestedBy;
 
-    return IPRSVerification.findAndCountAll({
-      where,
-      limit: safeLimit,
-      offset: (safePage - 1) * safeLimit,
-      order: [['createdAt', 'DESC']]
-    });
+    const rows = this.records.filter((record) => Object.entries(where).every(([key, value]) => record[key] === value));
+    return { count: rows.length, rows: rows.slice((safePage - 1) * safeLimit, safePage * safeLimit) };
   }
 }
 

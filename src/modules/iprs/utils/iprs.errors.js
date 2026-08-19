@@ -14,9 +14,18 @@ const IPRS_ERROR_MAP = {
   'ISB-103': { code: 'IPRS_MISSING_PARAMETERS', message: 'Required verification details are missing.', statusCode: 400, retryable: false },
   'ISB-105': { code: 'IPRS_RECORD_NOT_FOUND', message: 'The provided identification details could not be verified.', statusCode: 404, retryable: false },
   'ISB-108': { code: 'IPRS_BALANCE_EXHAUSTED', message: 'Identity verification is temporarily unavailable.', statusCode: 503, retryable: false },
-  'ISB-109': { code: 'IPRS_INSUFFICIENT_PERMISSIONS', message: 'This IPRS operation is not authorized.', statusCode: 403, retryable: false },
+  'ISB-109': { code: 'IPRS_INSUFFICIENT_PERMISSIONS', message: 'This operation is not authorized.', statusCode: 403, retryable: false },
   'ISB-110': { code: 'IPRS_LOGIN_REQUIRED', message: 'Identity verification service requires authentication.', statusCode: 503, retryable: false },
-  'ISB-114': { code: 'IPRS_INVALID_CREDENTIALS', message: 'Identity verification service is not configured correctly.', statusCode: 503, retryable: false },
+  'ISB-114': {
+    // The same IPRS response is returned for bad credentials and an account
+    // that lacks an operation entitlement. The SOAP Login operation succeeds
+    // for the configured account, so callers must not be told to rotate a
+    // working password when the denied operation is the real issue.
+    code: 'IPRS_OPERATION_NOT_AUTHORIZED',
+    message: 'The configured IPRS account is not authorized to use this identity operation.',
+    statusCode: 403,
+    retryable: false
+  },
   'ISB-116': { code: 'IPRS_INVALID_FINGERPRINT', message: 'Invalid fingerprint image format.', statusCode: 400, retryable: false }
 };
 

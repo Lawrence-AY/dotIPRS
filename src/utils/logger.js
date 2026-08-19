@@ -2,6 +2,7 @@ const pino = require('pino');
 
 const redact = [
   'req.headers.authorization',
+  'req.headers.x-api-key',
   'password',
   '*.password',
   'IPRS_PASSWORD',

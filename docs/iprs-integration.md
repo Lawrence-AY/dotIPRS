@@ -4,7 +4,7 @@ This backend isolates IPRS SOAP communication behind a REST/JSON module:
 
 Frontend -> Express routes -> IPRS controller -> IPRS services -> SOAP or mock client -> IPRS.
 
-The frontend never receives IPRS credentials, WSDL details, SOAP payloads, fingerprints, signatures, or raw personal-data responses.
+The frontend never receives IPRS credentials, WSDL details, or SOAP payloads. Raw biometric values remain excluded unless `IPRS_INCLUDE_BIOMETRICS=true` is explicitly enabled for an authorized deployment.
 
 ## Setup
 
@@ -24,7 +24,9 @@ The frontend never receives IPRS credentials, WSDL details, SOAP payloads, finge
 `IPRS_USERNAME` and `IPRS_PASSWORD` are never committed.
 `IPRS_TIMEOUT`, `IPRS_MAX_RETRIES`, and `IPRS_RETRY_DELAY` control transient failure behavior.
 `IPRS_ALLOWED_OPERATIONS` limits operations enabled for this deployment.
-`IPRS_AUDIT_ENABLED=false` can be used only for local tests/mock development when no database is available.
+`IPRS_INCLUDE_BIOMETRICS=true` includes base64 photo, passport photo, signature, and fingerprint values in authorized API responses. Keep it disabled unless this disclosure is approved and access is tightly controlled.
+`IPRS_AUDIT_ENABLED=true` enables an in-memory audit trail for the lifetime of the running process. It is disabled by default and does not require a database.
+`IPRS_AUTH_MODE=api_key` removes the need to call the gateway session endpoint. Set a high-entropy `IPRS_API_KEY` alongside it and send that value in `X-API-Key` on each IPRS request. The key is for this gateway only: do not use `IPRS_USERNAME` or `IPRS_PASSWORD` as the API key. Leave the mode unset (or set it to `session`) to retain the existing session flow.
 
 The provided documentation lists:
 
@@ -35,6 +37,7 @@ The provided documentation lists:
 
 `GET /api/v1/iprs/health`
 `POST /api/v1/iprs/verify/id`
+`POST /api/v1/iprs/verify/pin`
 `POST /api/v1/iprs/verify/passport`
 `POST /api/v1/iprs/verify/alien-card`
 `POST /api/v1/iprs/verify/birth-certificate`
@@ -43,15 +46,33 @@ The provided documentation lists:
 
 Verification endpoints require authentication and one of:
 
-`SYSTEM_ADMIN`, `SACCO_ADMIN`, `REGISTRATION_OFFICER`, `LOAN_OFFICER`.
+`VERIFY_ID`, `IDENTITY_ID`, `IDENTITY_PIN`, `VERIFY_PASSPORT`, `VERIFY_ALIEN_CARD`, `IDENTITY_BIRTH_CERTIFICATE`, and `IDENTITY_DEATH_CERTIFICATE`.
 
 Audit lookup requires:
 
-`SYSTEM_ADMIN`, `SACCO_ADMIN`, `AUDITOR`.
+`AUDIT_READ`.
 
-The temporary auth middleware reads `x-user-id` and `x-user-role`; replace it with the SACCO backend's real authentication middleware.
+Protected endpoints accept only a valid bearer token issued by `POST /api/v1/auth/session`. Do not expose the gateway-session credentials to browser clients.
 
-For Postman, create a backend session first:
+For sessionless access, configure the server with:
+
+```dotenv
+IPRS_AUTH_MODE=api_key
+IPRS_API_KEY=<a-long-random-secret>
+```
+
+Then call IPRS directly—there is no session URL to call:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/iprs/verify/id \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <a-long-random-secret>" \
+  -d "{\"idNumber\":\"12345678\"}"
+```
+
+This does not change the upstream connection: `IPRS_WSDL_URL` remains necessary because it is the address of the IPRS SOAP service, not a session endpoint.
+
+For session-based access, create a backend session first:
 
 `POST /api/v1/auth/session`
 
@@ -83,6 +104,33 @@ curl -X POST http://localhost:3000/api/v1/iprs/verify/id \
   -H "Authorization: Bearer <token>" \
   -d "{\"idNumber\":\"12345678\"}"
 ```
+
+To invoke IPRS `VerificationByIDCard`, include one or more Base64-encoded BMP
+fingerprints. Supplying `fingerprint` preserves compatibility with a single
+captured image; use `fingerprints` for multiple images. Without either field,
+`/verify/id` performs an ID-record lookup (`GetDataByIdCard`).
+
+```json
+{
+  "idNumber": "12345678",
+  "serialNumber": "ABC123",
+  "fingerprints": [
+    "<base64-encoded-bmp-fingerprint-1>",
+    "<base64-encoded-bmp-fingerprint-2>"
+  ]
+}
+```
+
+For a PIN lookup, prefer the dedicated endpoint:
+
+```json
+POST /api/v1/iprs/verify/pin
+{
+  "pin": "A001234567B"
+}
+```
+
+`POST /api/v1/iprs/verify/id` also accepts the same PIN-only body for backwards compatibility. Send either `idNumber` or `pin`, never both.
 
 ## Supported Operations
 

@@ -103,8 +103,8 @@ class IPRSIdentityService {
       requestId,
       verificationType: type,
       identifier,
-      status: 'VERIFIED',
-      iprsResponseStatus: 'OK',
+      status: mapped.verified ? 'VERIFIED' : 'NOT_FOUND',
+      iprsResponseStatus: mapped.verified ? 'OK' : 'EMPTY_RESULT',
       verificationMethod: method,
       requestedBy: context.userId
     });

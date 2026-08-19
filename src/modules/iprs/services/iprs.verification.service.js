@@ -9,50 +9,50 @@ class IPRSVerificationService {
     this.auditService = auditService;
   }
 
-  async verifyByIdCard({ idNumber, serialNumber, fingerprint }, context = {}) {
+  async verifyByIdCard({ idNumber, serialNumber, fingerprint, fingerprints }, context = {}) {
     return this.verify({
       requestId: context.requestId || uuidv4(),
       type: 'ID_CARD',
       identifier: idNumber,
       method: 'VerificationByIDCard',
       resultKey: 'VerificationByIDCardResult',
-      fingerprint,
-      call: () => this.client.verificationByIdCard({ idNumber, serialNumber, fingerprint }, context),
+      fingerprints: fingerprints || (fingerprint ? [fingerprint] : []),
+      call: () => this.client.verificationByIdCard({ idNumber, serialNumber, fingerprint, fingerprints }, context),
       context
     });
   }
 
-  async verifyByPassport({ passportNumber, fingerprint }, context = {}) {
+  async verifyByPassport({ passportNumber, fingerprint, fingerprints }, context = {}) {
     return this.verify({
       requestId: context.requestId || uuidv4(),
       type: 'PASSPORT',
       identifier: passportNumber,
       method: 'VerificationByPassport',
       resultKey: 'VerificationByPassportResult',
-      fingerprint,
-      call: () => this.client.verificationByPassport({ passportNumber, fingerprint }, context),
+      fingerprints: fingerprints || (fingerprint ? [fingerprint] : []),
+      call: () => this.client.verificationByPassport({ passportNumber, fingerprint, fingerprints }, context),
       context
     });
   }
 
-  async verifyByAlienCard({ alienCardNumber, fingerprint }, context = {}) {
+  async verifyByAlienCard({ alienCardNumber, fingerprint, fingerprints }, context = {}) {
     return this.verify({
       requestId: context.requestId || uuidv4(),
       type: 'ALIEN_CARD',
       identifier: alienCardNumber,
       method: 'VerificationByAlienCard',
       resultKey: 'VerificationByAlienCardResult',
-      fingerprint,
-      call: () => this.client.verificationByAlienCard({ alienCardNumber, fingerprint }, context),
+      fingerprints: fingerprints || (fingerprint ? [fingerprint] : []),
+      call: () => this.client.verificationByAlienCard({ alienCardNumber, fingerprint, fingerprints }, context),
       context
     });
   }
 
-  async verify({ requestId, type, identifier, method, resultKey, fingerprint, call, context }) {
-    if (fingerprint && !validateFingerprintBmp(fingerprint)) {
+  async verify({ requestId, type, identifier, method, resultKey, fingerprints, call, context }) {
+    if (!fingerprints.length || fingerprints.some((fingerprint) => !validateFingerprintBmp(fingerprint))) {
       throw new IPRSError({
         code: 'IPRS_INVALID_FINGERPRINT',
-        message: 'Fingerprint must be a Base64-encoded BMP image.',
+        message: 'At least one fingerprint must be a Base64-encoded BMP image.',
         statusCode: 400
       });
     }

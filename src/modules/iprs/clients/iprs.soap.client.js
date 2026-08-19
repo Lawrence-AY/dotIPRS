@@ -1,4 +1,5 @@
 const soap = require('soap');
+const http = require('http');
 const https = require('https');
 const iprsConfig = require('../../../config/iprs.config');
 const logger = require('../../../utils/logger');
@@ -16,6 +17,15 @@ const OPERATIONS = {
   verificationByPassport: 'VerificationByPassport',
   verificationByAlienCard: 'VerificationByAlienCard'
 };
+
+function createTransportAgent(wsdlUrl, verifySsl) {
+  // IPRS's documented endpoints are HTTP on private VPN addresses. Passing an
+  // https.Agent to an HTTP WSDL is invalid in Node and can prevent SOAP from
+  // establishing the correct connection. Keep TLS validation for HTTPS only.
+  return /^https:/i.test(wsdlUrl)
+    ? new https.Agent({ rejectUnauthorized: verifySsl })
+    : new http.Agent();
+}
 
 class IPRSSoapClient {
   constructor(config = iprsConfig) {
@@ -37,12 +47,11 @@ class IPRSSoapClient {
       timeout: this.config.timeout,
       wsdl_options: {
         timeout: this.config.timeout,
-        agent: new https.Agent({ rejectUnauthorized: this.config.verifySsl })
+        agent: createTransportAgent(this.config.wsdlUrl, this.config.verifySsl)
       }
     };
 
     this.client = await soap.createClientAsync(this.config.wsdlUrl, wsdlOptions);
-    this.client.setSecurity(new soap.BasicAuthSecurity(this.config.username, this.config.password));
     return this.client;
   }
 
@@ -82,7 +91,7 @@ class IPRSSoapClient {
           attempt
         }, 'IPRS_REQUEST_STARTED');
 
-        const response = await client[asyncOperation](this.withCredentials(payload));
+        const response = await client[asyncOperation](this.toSoapPayload(operation, payload));
 
         logger.info({
           requestId: context.requestId,
@@ -102,12 +111,36 @@ class IPRSSoapClient {
     throw this.normalizeTransportError(lastError);
   }
 
-  withCredentials(payload) {
-    return {
-      ...payload,
-      username: this.config.username,
-      password: this.config.password
+  toSoapPayload(operation, payload) {
+    const soapPayload = {
+      // The basicHttpBinding WSDL names the IPRS login field `log`.
+      // `username` is the local configuration name only; sending it on
+      // the SOAP wire leaves IPRS without the required credentials.
+      log: this.config.username,
+      pass: this.config.password
     };
+
+    if (payload.idNumber) soapPayload.id_number = payload.idNumber;
+    if (payload.serialNumber) soapPayload.serial_number = payload.serialNumber;
+    if (payload.passportNumber) soapPayload.passport_number = payload.passportNumber;
+    if (payload.alienCardNumber) soapPayload.id_number = payload.alienCardNumber;
+    if (operation === OPERATIONS.getDataByBirthCertificate && payload.certificateNumber) {
+      soapPayload.birthCertNumber = payload.certificateNumber;
+    }
+    if (operation === OPERATIONS.getDataByDeathCertificate && payload.certificateNumber) {
+      soapPayload.deathCertNumber = payload.certificateNumber;
+    }
+    if (payload.pin) soapPayload.pin = payload.pin;
+    // `fingerprints` is an ArrayOfbase64Binary in the IPRS WSDL. node-soap
+    // must receive the wrapper object to emit
+    // <fingerprints><base64Binary>...</base64Binary></fingerprints>, rather
+    // than serializing a single image directly inside <fingerprints>.
+    const fingerprints = payload.fingerprints || (payload.fingerprint ? [payload.fingerprint] : null);
+    if (fingerprints && fingerprints.length) {
+      soapPayload.fingerprints = { base64Binary: fingerprints };
+    }
+
+    return soapPayload;
   }
 
   normalizeTransportError(error) {
@@ -146,4 +179,4 @@ class IPRSSoapClient {
   verificationByAlienCard(payload, context) { return this.call(OPERATIONS.verificationByAlienCard, payload, context); }
 }
 
-module.exports = { IPRSSoapClient, OPERATIONS };
+module.exports = { IPRSSoapClient, OPERATIONS, createTransportAgent };

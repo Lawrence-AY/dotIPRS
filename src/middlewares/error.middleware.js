@@ -15,14 +15,20 @@ function errorHandler(err, req, res, next) {
 
   const safeOperationalError = err.name === 'IPRSError' || code.startsWith('IPRS_');
 
+  const error = {
+    code,
+    message: statusCode >= 500 && !safeOperationalError ? 'An unexpected error occurred.' : err.message,
+    retryable: Boolean(err.retryable)
+  };
+
+  // The provider code contains no PII and is essential when escalating an
+  // account, contract privilege, or UAT-data issue to IPRS support.
+  if (err.iprsCode) error.iprsCode = err.iprsCode;
+
   return res.status(statusCode).json({
     success: false,
     requestId: req.requestId,
-    error: {
-      code,
-      message: statusCode >= 500 && !safeOperationalError ? 'An unexpected error occurred.' : err.message,
-      retryable: Boolean(err.retryable)
-    }
+    error
   });
 }
 

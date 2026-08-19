@@ -1,4 +1,13 @@
 const { verifySessionToken } = require('../modules/auth/services/session.service');
+const authConfig = require('../config/auth.config');
+
+function keysMatch(provided, expected) {
+  if (!provided || !expected) return false;
+  const providedKey = Buffer.from(provided);
+  const expectedKey = Buffer.from(expected);
+  return providedKey.length === expectedKey.length
+    && require('crypto').timingSafeEqual(providedKey, expectedKey);
+}
 
 function requireAuth(req, res, next) {
   const authorization = req.headers.authorization || '';
@@ -10,23 +19,42 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  const userId = req.headers['x-user-id'];
-  const role = req.headers['x-user-role'];
+  return res.status(401).json({
+    success: false,
+    code: 'AUTH_REQUIRED',
+    message: 'Client authentication is required. Create a session with POST /api/v1/auth/session, then send Authorization: Bearer <token>.'
+  });
+}
 
-  if (!userId || !role) {
+function requireIPRSAuth(req, res, next) {
+  if (authConfig.iprsAuthMode !== 'api_key') return requireAuth(req, res, next);
+
+  const authorization = req.headers.authorization || '';
+  const apiKey = req.headers['x-api-key']
+    || (authorization.startsWith('Bearer ') ? authorization.slice(7) : null);
+
+  if (!authConfig.iprsApiKey) {
+    return res.status(503).json({
+      success: false,
+      code: 'IPRS_AUTH_NOT_CONFIGURED',
+      message: 'IPRS_API_KEY must be configured when IPRS_AUTH_MODE=api_key.'
+    });
+  }
+
+  if (!keysMatch(apiKey, authConfig.iprsApiKey)) {
     return res.status(401).json({
       success: false,
       code: 'AUTH_REQUIRED',
-      message: 'Client authentication is required. Create a session with POST /api/v1/auth/session, then send Authorization: Bearer <token>.'
+      message: 'Provide a valid X-API-Key to access IPRS.'
     });
   }
 
   req.client = {
-    id: userId,
-    clientId: userId,
-    name: 'Header Client',
-    allowedOperations: role === 'GATEWAY_ADMIN' ? ['*'] : String(role).split(',').map((item) => item.trim()),
-    rateLimit: 100
+    id: 'iprs-api-key-client',
+    clientId: 'iprs-api-key-client',
+    name: 'IPRS API Key Client',
+    allowedOperations: ['*'],
+    rateLimit: authConfig.defaultRateLimit
   };
   return next();
 }
@@ -48,4 +76,4 @@ function authorizeOperations(...operations) {
   };
 }
 
-module.exports = { requireAuth, authorizeOperations };
+module.exports = { requireAuth, requireIPRSAuth, authorizeOperations };

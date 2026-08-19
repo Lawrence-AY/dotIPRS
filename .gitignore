@@ -4,3 +4,5 @@ node_modules/
 coverage/
 dist/
 .DS_Store
+tests
+Web-service documentation_10.10.13.5.docx
