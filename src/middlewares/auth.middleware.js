@@ -1,13 +1,4 @@
 const { verifySessionToken } = require('../modules/auth/services/session.service');
-const authConfig = require('../config/auth.config');
-
-function keysMatch(provided, expected) {
-  if (!provided || !expected) return false;
-  const providedKey = Buffer.from(provided);
-  const expectedKey = Buffer.from(expected);
-  return providedKey.length === expectedKey.length
-    && require('crypto').timingSafeEqual(providedKey, expectedKey);
-}
 
 function requireAuth(req, res, next) {
   const authorization = req.headers.authorization || '';
@@ -27,36 +18,7 @@ function requireAuth(req, res, next) {
 }
 
 function requireIPRSAuth(req, res, next) {
-  if (authConfig.iprsAuthMode !== 'api_key') return requireAuth(req, res, next);
-
-  const authorization = req.headers.authorization || '';
-  const apiKey = req.headers['x-api-key']
-    || (authorization.startsWith('Bearer ') ? authorization.slice(7) : null);
-
-  if (!authConfig.iprsApiKey) {
-    return res.status(503).json({
-      success: false,
-      code: 'IPRS_AUTH_NOT_CONFIGURED',
-      message: 'IPRS_API_KEY must be configured when IPRS_AUTH_MODE=api_key.'
-    });
-  }
-
-  if (!keysMatch(apiKey, authConfig.iprsApiKey)) {
-    return res.status(401).json({
-      success: false,
-      code: 'AUTH_REQUIRED',
-      message: 'Provide a valid X-API-Key to access IPRS.'
-    });
-  }
-
-  req.client = {
-    id: 'iprs-api-key-client',
-    clientId: 'iprs-api-key-client',
-    name: 'IPRS API Key Client',
-    allowedOperations: ['*'],
-    rateLimit: authConfig.defaultRateLimit
-  };
-  return next();
+  return requireAuth(req, res, next);
 }
 
 function authorizeOperations(...operations) {

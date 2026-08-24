@@ -26,7 +26,7 @@ The frontend never receives IPRS credentials, WSDL details, or SOAP payloads. Ra
 `IPRS_ALLOWED_OPERATIONS` limits operations enabled for this deployment.
 `IPRS_INCLUDE_BIOMETRICS=true` includes base64 photo, passport photo, signature, and fingerprint values in authorized API responses. Keep it disabled unless this disclosure is approved and access is tightly controlled.
 `IPRS_AUDIT_ENABLED=true` enables an in-memory audit trail for the lifetime of the running process. It is disabled by default and does not require a database.
-`IPRS_AUTH_MODE=api_key` removes the need to call the gateway session endpoint. Set a high-entropy `IPRS_API_KEY` alongside it and send that value in `X-API-Key` on each IPRS request. The key is for this gateway only: do not use `IPRS_USERNAME` or `IPRS_PASSWORD` as the API key. Leave the mode unset (or set it to `session`) to retain the existing session flow.
+`AUTH_SESSION_USERNAME` and `AUTH_SESSION_PASSWORD` can define separate gateway login credentials. If they are not set, `POST /api/v1/auth/session` accepts `IPRS_USERNAME` and `IPRS_PASSWORD`.
 
 The provided documentation lists:
 
@@ -54,25 +54,7 @@ Audit lookup requires:
 
 Protected endpoints accept only a valid bearer token issued by `POST /api/v1/auth/session`. Do not expose the gateway-session credentials to browser clients.
 
-For sessionless access, configure the server with:
-
-```dotenv
-IPRS_AUTH_MODE=api_key
-IPRS_API_KEY=<a-long-random-secret>
-```
-
-Then call IPRS directly—there is no session URL to call:
-
-```bash
-curl -X POST http://localhost:3000/api/v1/iprs/verify/id \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: <a-long-random-secret>" \
-  -d "{\"idNumber\":\"12345678\"}"
-```
-
-This does not change the upstream connection: `IPRS_WSDL_URL` remains necessary because it is the address of the IPRS SOAP service, not a session endpoint.
-
-For session-based access, create a backend session first:
+Create a backend session first:
 
 `POST /api/v1/auth/session`
 
@@ -80,8 +62,8 @@ Body:
 
 ```json
 {
-  "username": "value-from-.env",
-  "password": "value-from-.env"
+  "username": "value-from-AUTH_SESSION_USERNAME-or-IPRS_USERNAME",
+  "password": "value-from-AUTH_SESSION_PASSWORD-or-IPRS_PASSWORD"
 }
 ```
 
@@ -89,12 +71,8 @@ Then copy `data.token` and send it on protected requests:
 
 `Authorization: Bearer <token>`
 
-Alternative protected request headers:
-
-`x-user-id: 11111111-1111-4111-8111-111111111111`
-`x-user-role: REGISTRATION_OFFICER`
-
 The session endpoint reads the real `.env`. `.env.example` is only a placeholder template.
+This does not change the upstream connection: `IPRS_WSDL_URL` remains necessary because it is the address of the IPRS SOAP service, not a session endpoint.
 
 Example Postman/curl request:
 
