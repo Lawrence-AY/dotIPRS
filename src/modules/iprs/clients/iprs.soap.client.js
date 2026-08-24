@@ -18,6 +18,16 @@ const OPERATIONS = {
   verificationByAlienCard: 'VerificationByAlienCard'
 };
 
+function describeWsdlTarget(wsdlUrl) {
+  const url = new URL(wsdlUrl);
+  return {
+    protocol: url.protocol.replace(':', ''),
+    host: url.hostname,
+    port: url.port || (url.protocol === 'https:' ? '443' : '80'),
+    path: `${url.pathname}${url.search}`
+  };
+}
+
 function createTransportAgent(wsdlUrl, verifySsl) {
   // IPRS's documented endpoints are HTTP on private VPN addresses. Passing an
   // https.Agent to an HTTP WSDL is invalid in Node and can prevent SOAP from
@@ -50,6 +60,13 @@ class IPRSSoapClient {
         agent: createTransportAgent(this.config.wsdlUrl, this.config.verifySsl)
       }
     };
+
+    const target = describeWsdlTarget(this.config.wsdlUrl);
+    logger.info({
+      target,
+      verifySsl: this.config.verifySsl
+    }, 'IPRS_WSDL_FIREWALL_CONNECTING');
+    console.log(`[IPRS] Connecting to firewall ${target.protocol}://${target.host}:${target.port}${target.path}`);
 
     this.client = await soap.createClientAsync(this.config.wsdlUrl, wsdlOptions);
     return this.client;
@@ -88,8 +105,11 @@ class IPRSSoapClient {
         logger.info({
           requestId: context.requestId,
           operation,
-          attempt
+          attempt,
+          target: describeWsdlTarget(this.config.wsdlUrl)
         }, 'IPRS_REQUEST_STARTED');
+        const target = describeWsdlTarget(this.config.wsdlUrl);
+        console.log(`[IPRS] Sending ${operation} to firewall ${target.host}:${target.port} attempt=${attempt}`);
 
         const response = await client[asyncOperation](this.toSoapPayload(operation, payload));
 

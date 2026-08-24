@@ -20,7 +20,7 @@ The frontend never receives IPRS credentials, WSDL details, or SOAP payloads. Ra
 `IPRS_ENABLED` toggles the integration.
 `IPRS_PROVIDER` supports `mock` and `real`.
 `IPRS_ENVIRONMENT` supports `development`, `uat`, and `production`.
-`IPRS_WSDL_URL` points to the private IPRS WSDL.
+`IPRS_WSDL_URL` points to the reachable IPRS WSDL. For the firewall route, use `https://197.232.142.204:9443/IPRSServerwcf?wsdl`.
 `IPRS_USERNAME` and `IPRS_PASSWORD` are never committed.
 `IPRS_TIMEOUT`, `IPRS_MAX_RETRIES`, and `IPRS_RETRY_DELAY` control transient failure behavior.
 `IPRS_ALLOWED_OPERATIONS` limits operations enabled for this deployment.
@@ -32,6 +32,7 @@ The provided documentation lists:
 
 `http://10.10.13.5:9003/IPRSServerwcf?wsdl` for wsHttpBinding.
 `http://10.10.13.5:9004/IPRSServerwcf?wsdl` for basicHttpBinding, which is the Node.js default in this scaffold.
+`https://197.232.142.204:9443/IPRSServerwcf?wsdl` for the configured firewall endpoint.
 
 ## REST Endpoints
 
