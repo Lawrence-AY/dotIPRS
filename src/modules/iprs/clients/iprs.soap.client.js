@@ -287,4 +287,11 @@ class IPRSSoapClient {
   verificationByAlienCard(payload, context) { return this.call(OPERATIONS.verificationByAlienCard, payload, context); }
 }
 
-module.exports = { IPRSSoapClient, OPERATIONS, createTransportAgent };
+module.exports = {
+  IPRSSoapClient,
+  OPERATIONS,
+  createTransportAgent,
+  describeTransportError,
+  describeWsdlTarget,
+  lookupOutboundIp
+};

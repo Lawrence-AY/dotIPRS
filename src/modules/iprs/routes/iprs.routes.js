@@ -47,6 +47,10 @@ if (iprsConfig.publicTestEndpointEnabled) {
   router.post('/test/id', testLimiter, validate(schemas.verifyId), controller.testLookupId);
 }
 
+if (iprsConfig.diagnosticsEndpointEnabled) {
+  router.get('/diagnostics/connection', testLimiter, controller.diagnostics);
+}
+
 router.use(requireIPRSAuth);
 router.use(limiter);
 

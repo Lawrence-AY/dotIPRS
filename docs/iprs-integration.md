@@ -27,6 +27,7 @@ The frontend never receives IPRS credentials, WSDL details, or SOAP payloads. Ra
 `IPRS_INCLUDE_BIOMETRICS=true` includes base64 photo, passport photo, signature, and fingerprint values in authorized API responses. Keep it disabled unless this disclosure is approved and access is tightly controlled.
 `IPRS_AUDIT_ENABLED=true` enables an in-memory audit trail for the lifetime of the running process. It is disabled by default and does not require a database.
 `AUTH_SESSION_USERNAME` and `AUTH_SESSION_PASSWORD` can define separate gateway login credentials. If they are not set, `POST /api/v1/auth/session` accepts `IPRS_USERNAME` and `IPRS_PASSWORD`.
+`IPRS_DIAGNOSTICS_ENDPOINT=true` enables `GET /api/v1/iprs/diagnostics/connection` for temporary deployment debugging. It generates a gateway bearer token and checks where IPRS connectivity breaks, so disable it after testing.
 
 The provided documentation lists:
 
@@ -37,6 +38,7 @@ The provided documentation lists:
 ## REST Endpoints
 
 `GET /api/v1/iprs/health`
+`GET /api/v1/iprs/diagnostics/connection`
 `POST /api/v1/iprs/verify/id`
 `POST /api/v1/iprs/verify/pin`
 `POST /api/v1/iprs/verify/passport`

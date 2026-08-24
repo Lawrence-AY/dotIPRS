@@ -22,6 +22,7 @@ module.exports = {
   rateLimitWindowMs: Number(process.env.IPRS_RATE_LIMIT_WINDOW_MS || 60000),
   rateLimitMax: Number(process.env.IPRS_RATE_LIMIT_MAX || 30),
   publicTestEndpointEnabled: process.env.IPRS_PUBLIC_TEST_ENDPOINT === 'true',
+  diagnosticsEndpointEnabled: process.env.IPRS_DIAGNOSTICS_ENDPOINT === 'true',
   allowedOperations,
   identifierHashSecret: process.env.IPRS_IDENTIFIER_HASH_SECRET || process.env.IPRS_PASSWORD || 'development-only-secret',
   auditEnabled: process.env.IPRS_AUDIT_ENABLED === 'true' && process.env.NODE_ENV !== 'test'
