@@ -1,10 +1,19 @@
 const iprsService = require('../../iprs/services/iprs.service');
 
+function clientIpFromReq(req) {
+  return req.headers['true-client-ip']
+    || req.headers['cf-connecting-ip']
+    || (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.ip
+    || req.socket?.remoteAddress;
+}
+
 function contextFromReq(req) {
   return {
     requestId: req.requestId,
     clientId: req.client && req.client.clientId,
-    userId: req.client && req.client.clientId
+    userId: req.client && req.client.clientId,
+    clientIp: clientIpFromReq(req)
   };
 }
 

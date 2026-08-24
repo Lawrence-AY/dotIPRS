@@ -18,6 +18,9 @@ const OPERATIONS = {
   verificationByAlienCard: 'VerificationByAlienCard'
 };
 
+let outboundIpPromise = null;
+let outboundIpCache = null;
+
 function describeWsdlTarget(wsdlUrl) {
   const url = new URL(wsdlUrl);
   return {
@@ -26,6 +29,45 @@ function describeWsdlTarget(wsdlUrl) {
     port: url.port || (url.protocol === 'https:' ? '443' : '80'),
     path: `${url.pathname}${url.search}`
   };
+}
+
+function lookupOutboundIp(config) {
+  if (process.env.RENDER_OUTBOUND_IP) return Promise.resolve(process.env.RENDER_OUTBOUND_IP);
+  if (outboundIpCache) return Promise.resolve(outboundIpCache);
+  if (outboundIpPromise) return outboundIpPromise;
+  if (!config.outboundIpLookupUrl) return Promise.resolve(null);
+
+  outboundIpPromise = new Promise((resolve) => {
+    const request = https.get(config.outboundIpLookupUrl, { timeout: config.outboundIpLookupTimeout }, (response) => {
+      let body = '';
+
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          outboundIpCache = parsed.ip || body.trim() || null;
+        } catch (_) {
+          outboundIpCache = body.trim() || null;
+        }
+
+        resolve(outboundIpCache);
+      });
+    });
+
+    request.on('timeout', () => {
+      request.destroy(new Error('Outbound IP lookup timed out.'));
+    });
+    request.on('error', () => {
+      resolve(null);
+    });
+  }).finally(() => {
+    outboundIpPromise = null;
+  });
+
+  return outboundIpPromise;
 }
 
 function createTransportAgent(wsdlUrl, verifySsl) {
@@ -37,13 +79,32 @@ function createTransportAgent(wsdlUrl, verifySsl) {
     : new http.Agent();
 }
 
+function describeTransportError(error) {
+  return {
+    name: error.name,
+    code: error.code,
+    errno: error.errno,
+    syscall: error.syscall,
+    address: error.address,
+    port: error.port,
+    message: error.message
+  };
+}
+
+async function describeNetworkContext(config, context) {
+  return {
+    incomingClientIp: context.clientIp,
+    renderOutboundIp: await lookupOutboundIp(config)
+  };
+}
+
 class IPRSSoapClient {
   constructor(config = iprsConfig) {
     this.config = config;
     this.client = null;
   }
 
-  async getClient() {
+  async getClient(context = {}) {
     if (this.client) return this.client;
     if (!this.config.wsdlUrl) {
       throw new IPRSError({
@@ -62,13 +123,27 @@ class IPRSSoapClient {
     };
 
     const target = describeWsdlTarget(this.config.wsdlUrl);
+    const network = await describeNetworkContext(this.config, context);
     logger.info({
       target,
+      ...network,
       verifySsl: this.config.verifySsl
     }, 'IPRS_WSDL_FIREWALL_CONNECTING');
-    console.log(`[IPRS] Connecting to firewall ${target.protocol}://${target.host}:${target.port}${target.path}`);
+    console.log(`[IPRS] Render outbound ${network.renderOutboundIp || 'unknown'} connecting to firewall ${target.protocol}://${target.host}:${target.port}${target.path}; incoming client ${network.incomingClientIp || 'unknown'}`);
 
-    this.client = await soap.createClientAsync(this.config.wsdlUrl, wsdlOptions);
+    try {
+      this.client = await soap.createClientAsync(this.config.wsdlUrl, wsdlOptions);
+    } catch (error) {
+      logger.error({
+        target,
+        ...network,
+        verifySsl: this.config.verifySsl,
+        error: describeTransportError(error)
+      }, 'IPRS_WSDL_FIREWALL_CONNECTION_FAILED');
+      console.error(`[IPRS] Render outbound ${network.renderOutboundIp || 'unknown'} firewall WSDL connection failed ${target.host}:${target.port} code=${error.code || error.name || 'UNKNOWN'} message=${error.message}; incoming client ${network.incomingClientIp || 'unknown'}`);
+      throw error;
+    }
+
     return this.client;
   }
 
@@ -86,12 +161,13 @@ class IPRSSoapClient {
     this.ensureOperationAllowed(operation);
 
     const startedAt = Date.now();
+    const network = await describeNetworkContext(this.config, context);
     let attempt = 0;
     let lastError;
 
     while (attempt <= this.config.maxRetries) {
       try {
-        const client = await this.getClient();
+        const client = await this.getClient(context);
         const asyncOperation = `${operation}Async`;
 
         if (typeof client[asyncOperation] !== 'function') {
@@ -104,17 +180,19 @@ class IPRSSoapClient {
 
         logger.info({
           requestId: context.requestId,
+          ...network,
           operation,
           attempt,
           target: describeWsdlTarget(this.config.wsdlUrl)
         }, 'IPRS_REQUEST_STARTED');
         const target = describeWsdlTarget(this.config.wsdlUrl);
-        console.log(`[IPRS] Sending ${operation} to firewall ${target.host}:${target.port} attempt=${attempt}`);
+        console.log(`[IPRS] Render outbound ${network.renderOutboundIp || 'unknown'} sending ${operation} to firewall ${target.host}:${target.port} attempt=${attempt}; incoming client ${network.incomingClientIp || 'unknown'}`);
 
         const response = await client[asyncOperation](this.toSoapPayload(operation, payload));
 
         logger.info({
           requestId: context.requestId,
+          ...network,
           operation,
           duration: Date.now() - startedAt
         }, 'IPRS_REQUEST_COMPLETED');
@@ -122,6 +200,16 @@ class IPRSSoapClient {
         return response;
       } catch (error) {
         lastError = error;
+        logger.error({
+          requestId: context.requestId,
+          ...network,
+          operation,
+          attempt,
+          target: describeWsdlTarget(this.config.wsdlUrl),
+          error: describeTransportError(error)
+        }, 'IPRS_REQUEST_FAILED');
+        console.error(`[IPRS] Render outbound ${network.renderOutboundIp || 'unknown'} ${operation} failed attempt=${attempt} code=${error.code || error.name || 'UNKNOWN'} message=${error.message}; incoming client ${network.incomingClientIp || 'unknown'}`);
+
         if (error instanceof IPRSError || !isRetryableTransportError(error) || attempt >= this.config.maxRetries) break;
         await this.delay(this.config.retryDelay * Math.pow(2, attempt));
         attempt += 1;

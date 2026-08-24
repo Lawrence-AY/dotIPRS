@@ -15,6 +15,8 @@ module.exports = {
   timeout: Number(process.env.IPRS_TIMEOUT || 30000),
   soapVersion: process.env.IPRS_SOAP_VERSION || '1.1',
   verifySsl: process.env.IPRS_VERIFY_SSL !== 'false',
+  outboundIpLookupUrl: process.env.OUTBOUND_IP_LOOKUP_URL || 'https://api.ipify.org?format=json',
+  outboundIpLookupTimeout: Number(process.env.OUTBOUND_IP_LOOKUP_TIMEOUT || 3000),
   maxRetries: Number(process.env.IPRS_MAX_RETRIES || 2),
   retryDelay: Number(process.env.IPRS_RETRY_DELAY || 1000),
   rateLimitWindowMs: Number(process.env.IPRS_RATE_LIMIT_WINDOW_MS || 60000),
