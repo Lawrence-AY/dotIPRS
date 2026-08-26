@@ -1,11 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
+const iprsConfig = require('../../../config/iprs.config');
 const { mapIPRSError } = require('../utils/iprs.errors');
 const { mapIdentityResponse } = require('../utils/iprs.response.mapper');
+const { lookupOutboundIp } = require('../clients/iprs.soap.client');
 
 class IPRSIdentityService {
-  constructor({ client, auditService }) {
+  constructor({ client, auditService, cacheService }) {
     this.client = client;
     this.auditService = auditService;
+    this.cacheService = cacheService;
   }
 
   async getByIdNumber(idNumber, serialNumber, context = {}) {
@@ -81,8 +84,48 @@ class IPRSIdentityService {
   }
 
   async lookup({ requestId, type, identifier, method, resultKey, call, context }) {
+    const cached = await this.cacheService.find(type, identifier);
+    if (cached && cached.data) {
+      await this.auditService.record({
+        requestId,
+        verificationType: type,
+        identifier,
+        status: cached.data.verified ? 'VERIFIED' : 'NOT_FOUND',
+        iprsResponseStatus: 'CACHE_HIT',
+        verificationMethod: method,
+        requestedBy: context.userId,
+        requestedByIp: context.clientIp,
+        fetchedByIp: cached.fetchedByIp,
+        source: 'DATABASE'
+      });
+      await this.cacheService.recordLookupEvent({
+        requestId,
+        type,
+        identifier,
+        method,
+        source: 'DATABASE',
+        status: cached.data.verified ? 'VERIFIED' : 'NOT_FOUND',
+        context,
+        fetchedByIp: cached.fetchedByIp
+      });
+
+      return {
+        ...cached.data,
+        source: 'DATABASE',
+        verificationReference: requestId,
+        verificationId: requestId,
+        capture: {
+          source: 'DATABASE',
+          requestedByIp: context.clientIp || null,
+          fetchedByIp: cached.fetchedByIp || null,
+          cachedAt: cached.updatedAt || cached.createdAt || null
+        }
+      };
+    }
+
     const raw = await call();
     const mapped = mapIdentityResponse(raw, resultKey, requestId);
+    const fetchedByIp = await this.lookupFetchedByIp();
 
     if (mapped.errorOccurred) {
       const error = mapIPRSError(mapped.iprsErrorCode, mapped.iprsErrorMessage);
@@ -94,10 +137,33 @@ class IPRSIdentityService {
         iprsErrorCode: mapped.iprsErrorCode,
         iprsResponseStatus: mapped.iprsErrorMessage,
         verificationMethod: method,
-        requestedBy: context.userId
+        requestedBy: context.userId,
+        requestedByIp: context.clientIp,
+        fetchedByIp,
+        source: 'IPRS'
+      });
+      await this.cacheService.recordLookupEvent({
+        requestId,
+        type,
+        identifier,
+        method,
+        source: 'IPRS',
+        status: error.code === 'IPRS_RECORD_NOT_FOUND' ? 'NOT_FOUND' : 'FAILED',
+        context,
+        fetchedByIp
       });
       throw error;
     }
+
+    const response = {
+      ...mapped,
+      capture: {
+        source: 'IPRS',
+        requestedByIp: context.clientIp || null,
+        fetchedByIp,
+        cachedAt: new Date()
+      }
+    };
 
     const audit = await this.auditService.record({
       requestId,
@@ -106,13 +172,42 @@ class IPRSIdentityService {
       status: mapped.verified ? 'VERIFIED' : 'NOT_FOUND',
       iprsResponseStatus: mapped.verified ? 'OK' : 'EMPTY_RESULT',
       verificationMethod: method,
-      requestedBy: context.userId
+      requestedBy: context.userId,
+      requestedByIp: context.clientIp,
+      fetchedByIp,
+      source: 'IPRS'
+    });
+    await this.cacheService.recordLookupEvent({
+      requestId,
+      type,
+      identifier,
+      method,
+      source: 'IPRS',
+      status: mapped.verified ? 'VERIFIED' : 'NOT_FOUND',
+      context,
+      fetchedByIp
     });
 
+    if (mapped.verified) {
+      await this.cacheService.save({
+        type,
+        identifier,
+        method,
+        data: response,
+        context,
+        fetchedByIp
+      });
+    }
+
     return {
-      ...mapped,
+      ...response,
       verificationId: audit ? audit.id : requestId
     };
+  }
+
+  async lookupFetchedByIp() {
+    if (process.env.NODE_ENV === 'test' || iprsConfig.provider !== 'real') return null;
+    return lookupOutboundIp(iprsConfig);
   }
 }
 

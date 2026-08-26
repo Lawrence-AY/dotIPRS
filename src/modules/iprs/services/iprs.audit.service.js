@@ -13,7 +13,20 @@ class IPRSAuditService {
       .digest('hex');
   }
 
-  async record({ requestId, memberId, verificationType, identifier, status, iprsErrorCode, iprsResponseStatus, verificationMethod, requestedBy }) {
+  async record({
+    requestId,
+    memberId,
+    verificationType,
+    identifier,
+    status,
+    iprsErrorCode,
+    iprsResponseStatus,
+    verificationMethod,
+    requestedBy,
+    requestedByIp,
+    fetchedByIp,
+    source
+  }) {
     if (!iprsConfig.auditEnabled) {
       return { id: requestId };
     }
@@ -30,6 +43,9 @@ class IPRSAuditService {
       verificationMethod: verificationMethod || null,
       verifiedAt: status === 'VERIFIED' ? new Date() : null,
       requestedBy: requestedBy || null,
+      requestedByIp: requestedByIp || null,
+      fetchedByIp: fetchedByIp || null,
+      source: source || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };

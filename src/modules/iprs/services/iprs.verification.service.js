@@ -1,7 +1,9 @@
 const { v4: uuidv4 } = require('uuid');
+const iprsConfig = require('../../../config/iprs.config');
 const { IPRSError, mapIPRSError } = require('../utils/iprs.errors');
 const { validateFingerprintBmp } = require('../utils/iprs.image.utils');
 const { mapVerificationResponse } = require('../utils/iprs.response.mapper');
+const { lookupOutboundIp } = require('../clients/iprs.soap.client');
 
 class IPRSVerificationService {
   constructor({ client, auditService }) {
@@ -59,6 +61,7 @@ class IPRSVerificationService {
 
     const raw = await call();
     const mapped = mapVerificationResponse(raw, resultKey, requestId);
+    const fetchedByIp = await this.lookupFetchedByIp();
 
     if (mapped.errorOccurred) {
       const error = mapIPRSError(mapped.iprsErrorCode, mapped.iprsErrorMessage);
@@ -70,7 +73,10 @@ class IPRSVerificationService {
         iprsErrorCode: mapped.iprsErrorCode,
         iprsResponseStatus: mapped.iprsErrorMessage,
         verificationMethod: method,
-        requestedBy: context.userId
+        requestedBy: context.userId,
+        requestedByIp: context.clientIp,
+        fetchedByIp,
+        source: 'IPRS'
       });
       throw error;
     }
@@ -82,13 +88,26 @@ class IPRSVerificationService {
       status: mapped.verified ? 'VERIFIED' : 'NOT_VERIFIED',
       iprsResponseStatus: mapped.verified ? 'MATCH' : 'NO_MATCH',
       verificationMethod: method,
-      requestedBy: context.userId
+      requestedBy: context.userId,
+      requestedByIp: context.clientIp,
+      fetchedByIp,
+      source: 'IPRS'
     });
 
     return {
       ...mapped,
+      capture: {
+        source: 'IPRS',
+        requestedByIp: context.clientIp || null,
+        fetchedByIp
+      },
       verificationId: audit ? audit.id : requestId
     };
+  }
+
+  async lookupFetchedByIp() {
+    if (process.env.NODE_ENV === 'test' || iprsConfig.provider !== 'real') return null;
+    return lookupOutboundIp(iprsConfig);
   }
 }
 

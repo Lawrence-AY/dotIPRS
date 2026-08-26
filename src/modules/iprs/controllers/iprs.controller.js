@@ -5,7 +5,9 @@ const {
   IPRSSoapClient,
   describeTransportError,
   describeWsdlTarget,
-  lookupOutboundIp
+  lookupOutboundIp,
+  probeTcpTarget,
+  probeTlsTarget
 } = require('../clients/iprs.soap.client');
 
 function clientIpFromReq(req) {
@@ -154,6 +156,25 @@ async function diagnostics(req, res) {
     steps.push(step('renderOutboundIp', false, {
       incomingClientIp: context.clientIp,
       error: describeTransportError(error)
+    }));
+  }
+
+  if (iprsConfig.wsdlUrl) {
+    const tcpProbe = await probeTcpTarget(iprsConfig.wsdlUrl, iprsConfig.outboundIpLookupTimeout);
+    steps.push(step('firewallTcpConnect', tcpProbe.ok, {
+      target: tcpProbe.target,
+      error: tcpProbe.error
+    }));
+
+    const tlsProbe = await probeTlsTarget(iprsConfig.wsdlUrl, iprsConfig.outboundIpLookupTimeout);
+    steps.push(step('firewallTlsConnect', tlsProbe.ok, {
+      target: tlsProbe.target,
+      skipped: tlsProbe.skipped,
+      reason: tlsProbe.reason,
+      authorized: tlsProbe.authorized,
+      authorizationError: tlsProbe.authorizationError,
+      protocol: tlsProbe.protocol,
+      error: tlsProbe.error
     }));
   }
 

@@ -1,6 +1,8 @@
 const soap = require('soap');
 const http = require('http');
 const https = require('https');
+const net = require('net');
+const tls = require('tls');
 const iprsConfig = require('../../../config/iprs.config');
 const logger = require('../../../utils/logger');
 const { IPRSError, isRetryableTransportError } = require('../utils/iprs.errors');
@@ -89,6 +91,70 @@ function describeTransportError(error) {
     port: error.port,
     message: error.message
   };
+}
+
+function probeTcpTarget(wsdlUrl, timeout) {
+  const target = describeWsdlTarget(wsdlUrl);
+
+  return new Promise((resolve) => {
+    const socket = net.connect({
+      host: target.host,
+      port: Number(target.port),
+      timeout
+    });
+
+    const done = (ok, details = {}) => {
+      socket.destroy();
+      resolve({ ok, target, ...details });
+    };
+
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false, {
+      error: {
+        code: 'ETIMEDOUT',
+        message: `TCP connection timed out after ${timeout}ms.`
+      }
+    }));
+    socket.once('error', (error) => done(false, {
+      error: describeTransportError(error)
+    }));
+  });
+}
+
+function probeTlsTarget(wsdlUrl, timeout) {
+  const target = describeWsdlTarget(wsdlUrl);
+  if (target.protocol !== 'https') {
+    return Promise.resolve({ ok: true, skipped: true, reason: 'Target is not HTTPS.', target });
+  }
+
+  return new Promise((resolve) => {
+    const socket = tls.connect({
+      host: target.host,
+      port: Number(target.port),
+      timeout,
+      rejectUnauthorized: false
+    });
+
+    const done = (ok, details = {}) => {
+      socket.destroy();
+      resolve({ ok, target, ...details });
+    };
+
+    socket.once('secureConnect', () => done(true, {
+      authorized: socket.authorized,
+      authorizationError: socket.authorizationError || null,
+      protocol: socket.getProtocol()
+    }));
+    socket.once('timeout', () => done(false, {
+      error: {
+        code: 'ETIMEDOUT',
+        message: `TLS connection timed out after ${timeout}ms.`
+      }
+    }));
+    socket.once('error', (error) => done(false, {
+      error: describeTransportError(error)
+    }));
+  });
 }
 
 async function describeNetworkContext(config, context) {
@@ -293,5 +359,7 @@ module.exports = {
   createTransportAgent,
   describeTransportError,
   describeWsdlTarget,
-  lookupOutboundIp
+  lookupOutboundIp,
+  probeTcpTarget,
+  probeTlsTarget
 };

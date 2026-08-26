@@ -4,6 +4,7 @@ const MockIPRSClient = require('../clients/iprs.mock.client');
 const IPRSAuditService = require('./iprs.audit.service');
 const IPRSIdentityService = require('./iprs.identity.service');
 const IPRSVerificationService = require('./iprs.verification.service');
+const IPRSIdentityCacheService = require('./iprs.identity.cache.service');
 
 function createIPRSService() {
   const client = iprsConfig.provider === 'real'
@@ -11,12 +12,14 @@ function createIPRSService() {
     : new MockIPRSClient();
 
   const auditService = new IPRSAuditService();
-  const identityService = new IPRSIdentityService({ client, auditService });
+  const cacheService = new IPRSIdentityCacheService();
+  const identityService = new IPRSIdentityService({ client, auditService, cacheService });
   const verificationService = new IPRSVerificationService({ client, auditService });
 
   return {
     identityService,
     verificationService,
+    cacheService,
     auditService,
     health() {
       return {
